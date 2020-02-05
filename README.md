@@ -1,5 +1,5 @@
-Backup mysqldumps(5.7.x) into S3 using lambda.
-Compressed(using gzip) file size must be less than 512MB(by aws lambda Constraints)
+Backup mysqldumps(5.7.x) into S3 using lambda.  
+Compressed(using gzip) file size must be less than 512MB(by aws lambda constraints with /tmp directory)
 
 1. Add zip files in layers into your aws lambda layers.
 2. Connet the new layers to AWS lambda function.
