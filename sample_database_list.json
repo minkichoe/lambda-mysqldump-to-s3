@@ -1,0 +1,21 @@
+[
+  {
+    "name": "database-name",
+    "username": "set-your-username",
+    "password": "set-your-password",
+    "host": "123.456.789.000",
+    "port": "1234",
+    "tables": ["archive", "attach", "board", "message", "message_user", "push"]
+  },
+  {
+    "name": "sms",
+    "username": "root",
+    "password": "root",
+    "host": "ec2-123-456-789-000.ap-northeast-2.compute.amazonaws.com",
+    "port": "3306",
+    "tables": []
+    # The tables array is empty.
+    # Which meaning is backup all the tables in your database.
+    # please remove this comments and put your database data here and copy&paste into your aws lambda environment variables name with 'DATABASE_LIST'.
+  }
+]
