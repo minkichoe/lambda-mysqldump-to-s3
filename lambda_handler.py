@@ -196,8 +196,15 @@ def clean_up(now: str) -> bool:
             db_name=db['name'],
             file=filename_prefix
         )
-        keys = s3_bucket.objects.filter(Prefix=prefix).limit(23)
-        return keys.delete()
+        file_objects = s3_bucket.objects.filter(Prefix=prefix)
+        
+        for hour, file_object in enumerate(file_objects):
+            if hour is 0:
+                continue
+            else:
+                file_object.delete()
+                
+        return True
 
     def delete_keys_last_months(filename_prefix: str, db: dict, day_of_the_week: str=BACKUP_DAYS_OF_THE_WEEK):
         """ 특정 월에서 특정요일 백업만 남기고 삭제
@@ -234,10 +241,9 @@ def clean_up(now: str) -> bool:
             
         return True
             
-    date, time = now.split('_')
-    today = datetime.strptime(date, "%Y-%m-%d").date()
-    a_weeks_ago = today - timedelta(weeks=1)
-    a_month_ago = today - timedelta(weeks=4)
+    now_object = datetime.strptime(now, '%Y-%m-%d_%H:%M:%S').date()
+    a_weeks_ago = now_object - timedelta(weeks=1)
+    a_month_ago = now_object - timedelta(weeks=4)
     weeks_prefix = a_weeks_ago.strftime('%Y-%m-%d')
     month_prefix = a_month_ago.strftime('%Y-%m-')
     
