@@ -52,8 +52,8 @@ Path = str
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 SECRET_KEY = os.getenv('SECRET_KEY')
 JANDI_API_URL = os.getenv('JANDI_API_URL')
-BUCKET_NAME = os.getenv('BUCKET_NAME', 'matchpoint-database-backup')
-TEMP_BASE_DIR = os.getenv('TEMP_BASE_DIR', '/tmp')
+BUCKET_NAME = os.getenv('BUCKET_NAME')
+TEMP_BASE_DIR = os.getenv('TEMP_BASE_DIR')
 DATABASE_LIST = json.loads(os.getenv('DATABASE_LIST'))
 BACKUP_DAYS_OF_THE_WEEK = os.getenv('BACKUP_DAYS_OF_THE_WEEK', '일')
 
@@ -64,45 +64,9 @@ DAYS_OF_THE_WEEK = ['월', '화', '수', '목', '금', '토', '일']
 s3_client = boto3.client(
     "s3",
     aws_access_key_id=ACCESS_KEY,
-    aws_secret_access_key=SECRET_KEY
-)
+    aws_secret_access_key=SECRET_KEY)
 s3_resource = boto3.resource('s3')
 s3_bucket = s3_resource.Bucket(BUCKET_NAME)
-    
-def error_report(body: str, **messages: dict) -> int:
-    """ Jandi incomming call API 호출.
-
-    Jandi incomming call API를 호출하여 스쿨맘의 특정 채팅방에 에러사실을 공유합니다.
-    
-    https://support.jandi.com/hc/ko/articles/210952203-%EC%9E%94%EB%94%94-%EC%BB%A4%EB%84%A5%ED%8A%B8-%EC%9D%B8%EC%BB%A4%EB%B0%8D-%EC%9B%B9%ED%9B%85-Incoming-Webhook-%EC%9C%BC%EB%A1%9C-%EC%99%B8%EB%B6%80-%EB%8D%B0%EC%9D%B4%ED%84%B0%EB%A5%BC-%EC%9E%94%EB%94%94-%EB%A9%94%EC%8B%9C%EC%A7%80%EB%A1%9C-%EC%88%98%EC%8B%A0%ED%95%98%EA%B8%B0
-    
-    Args:
-        body (str): 메시지 제목
-        messages (dict): 메시지 키:값 목록
-
-    Returns:
-        int: HTTP Response 상태코드 반환
-
-    Raises:
-        urllib.error.URLError
-    """
-    data = {'body': body}
-    data['connectInfo'] = [
-        {'title': str(title), 'description': str(description)}
-        for title, description in messages.items()
-    ]
-
-    request = Request(
-        JANDI_API_URL,
-        data=json.dumps(data).encode(),
-        headers={
-            'Content-Type': 'application/json',
-            'Accept': 'application/vnd.tosslab.jandi-v2+json',
-        }
-    )
-
-    response = urlopen(request)
-    return response.getcode()
 
 def get_now(timezone=KST) -> str:
     """ 특정 지역의 현재 datetime을 문자열로 반환.
@@ -127,7 +91,7 @@ def save_file_to_local(db: dict, now: str, compress: bool=True) -> Path:
     Returns:
         Path (str): lambda 로컬에 저장된 db dump 파일의 절대경로
     """
-    exp = 'gz' if compress else 'sql'
+    exp = 'sql.gz' if compress else 'sql'
     
     tables_string = ' '.join(db["tables"])
     target_db_string = f'-h {db["host"]} --port {db["port"]} -u {db["username"]} -p{db["password"]} {db["name"]} {tables_string}'
@@ -142,11 +106,13 @@ def save_file_to_local(db: dict, now: str, compress: bool=True) -> Path:
     os.makedirs(os.path.dirname(target_local_path), exist_ok=True)
 
     # mysqldump, gzip(선택) 스크립트 생성
-    mysqldump_string = f'/opt/bin/mysqldump --single-transaction {target_db_string}'
+    mysqldump_string = f'/opt/bin/mysqldump --no-autocommit=1 --single-transaction=1 --extended-insert=1 {target_db_string}'
     command = f'{mysqldump_string} | gzip -9 > {target_local_path};' if compress else f'{mysqldump_string} > {target_local_path};'
     
     response = subprocess.run(command, shell=True, capture_output=True)
-    
+    # print(response.stdout)
+    # print(response.stderr)
+    # print(f'<file size: {os.path.getsize(target_local_path)}>')
     return target_local_path
     
 def backup(now: str) -> bool:
@@ -161,13 +127,10 @@ def backup(now: str) -> bool:
         bool: 성공시 True
     """
     for db in DATABASE_LIST:
+        # print(f'<db: {db}>')
         local_path = save_file_to_local(db, now)
         s3_path = local_path.replace(TEMP_BASE_DIR, '')
-        response = s3_client.upload_file(
-            Bucket=BUCKET_NAME,
-            Filename=local_path,
-            Key=s3_path
-        )
+        response = s3_client.upload_file(local_path, BUCKET_NAME, s3_path)
         subprocess.run(f'rm -rf {TEMP_BASE_DIR}/*', shell=True)
     return True
 
@@ -255,12 +218,10 @@ def clean_up(now: str) -> bool:
 
 def lambda_handler(event, context):
     now = get_now()
-    try:
-        is_uploaded = backup(now)
+    hour = datetime.strptime(now, '%Y-%m-%d_%H:%M:%S').hour
+
+    is_uploaded = backup(now)
+    if hour % 24 == 0:
         is_cleaned = clean_up(now)
-    except Exception as exc:
-        __ = error_report("DB 백업관리 실패", now=now, exc=exc, event=event, context=context)
-        raise exc
-    else:
-        return {'statusCode': 200, 'body': json.dumps("success")}
     
+    return {'statusCode': 200, 'body': json.dumps("success")}
